@@ -12,6 +12,6 @@ Just opening the index.html doesn't work, I was getting CORS errors and not seei
 python -m http.server
 ```
 
-
+I nearly had the solution for ball on platform 3, but I lost it long ago(removed from browser cache). If I start again, I want to do that, also the drone. Drone seems very similar to inverted pendulum, it should be easy.
 
 
