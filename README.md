@@ -2,6 +2,8 @@
 
 Solutions to the challenges on https://janismac.github.io/ControlChallenges/
 
+https://github.com/user-attachments/assets/12383e1f-a750-41e8-a27e-32167a4c8a4a
+
 The site was recently updated, but I wanted to continue from its old state, so ran the old version of the website locally.
 
 Used the `027b7d091509f2fdbb9a73ad5b34b111128de7ab` hash from https://github.com/janismac/ControlChallenges
