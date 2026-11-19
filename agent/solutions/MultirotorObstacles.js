@@ -356,7 +356,8 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
-    for (o = 0; o < opts.outer; o++) {
+    // A few rounds extra for an attempt that has all but arrived.
+    for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
@@ -388,7 +389,8 @@ function planMinTime(mpc, x0, reached, opts)
   // uses the whole actuator range and leaves nothing for corrections.
   mpc.loadPlan(best);
   if (opts.margin > 1) mpc.setHorizon(Math.ceil(best.length * opts.margin));
-  if (!solve()) { mpc.loadPlan(best); solve(); }
+  // If the slack version does not work out, go back to exactly the shortest plan that did.
+  if (!solve()) { mpc.loadPlan(best); mpc.optimise(x0, 0); }
   return true;
 }
 
@@ -451,7 +453,8 @@ function dlqr(Ad, Bd, Q, R, start, tol)
 // ---------------------------------------------------------------------------
 var TOL = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];   // the level's own completion tolerances
 
-// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions]}
+// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions],
+//         fallback(x, tools): what to do while no plan has been found (default: hover at the goal)}
 function makeMultirotorController(level)
 {
   var drive = null;
@@ -492,14 +495,15 @@ function makeMultirotorController(level)
     function hold(x) { return hoverAt(x, 0, 0); }
     function within(x, scale) { for (var i = 0; i < 6; i++) if (Math.abs(x[i]) > scale * TOL[i]) return false; return true; }
 
+    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h};
     drive = makeManeuver({
       mpc: mpc,
-      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds({mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h})},
+      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds(tools)},
       reached: function (x) { return within(x, 0.5); },
       strayed: function (x, xPlan) { for (var i = 0; i < 6; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
       canHold: function (x) { return Math.abs(x[4]) < 0.5 && Math.abs(x[0]) < 0.5 && Math.abs(x[2]) < 0.5; },
       hold: hold,
-      fallback: hold
+      fallback: level.fallback ? function (x) { return level.fallback(x, tools); } : hold
     });
   }
 
@@ -519,6 +523,7 @@ var WALLS = [
 ];
 var CLEARANCE = 0.12;   // distance the planner keeps from a wall
 var WEIGHT = 40;
+var parked = null;
 
 // How deep a point is inside a wall grown by `margin` (0 when outside).
 function intrusion(wall, x, y, margin)
@@ -541,16 +546,21 @@ var controller = makeMultirotorController({
     }
     return true;
   },
+  // Without a plan: hover on the spot rather than fly at a wall, and plan again.
+  fallback: function (x, t) {
+    if (!parked) parked = {x: x[0], y: x[2]};
+    return t.hoverAt(x, parked.x, parked.y);
+  },
   // Starting guess: fly the hover regulator through the open side of each
   // wall still ahead, then to the goal. The optimiser rounds off the corners.
   seeds: function (t) {
-    var FACTORS = [1, 1.4, 2];
-    return [function (x0, attempt) {
+    var FACTORS = [1, 1.2, 1.4, 1.7, 2, 2.5];
+    function route(cautious) { return function (x0, attempt) {
       if (attempt >= FACTORS.length) return false;
       var gates = [], i, w, length = 0, px = x0[0], py = x0[2];
       for (i = 0; i < WALLS.length; i++) {
         w = WALLS[i];
-        if (w.x > x0[0]) gates.push({x: w.x, y: w.blocks === 'above' ? w.edge - 0.4 : w.edge + 0.4});
+        if (w.x > x0[0]) gates.push({x: w.x, y: w.blocks === 'above' ? w.edge - 0.4 : w.edge + 0.4, wall: w});
       }
       gates.push({x: 0, y: 0});
       for (i = 0; i < gates.length; i++) { length += Math.sqrt(Math.pow(gates[i].x - px, 2) + Math.pow(gates[i].y - py, 2)); px = gates[i].x; py = gates[i].y; }
@@ -560,9 +570,12 @@ var controller = makeMultirotorController({
         while (next < gates.length - 1 && x[0] > gates[next].x - 0.15) next++;
         // Aim a little past the gate so the guess keeps moving.
         var g = gates[next], ahead = next < gates.length - 1 ? 0.3 : 0;
+        // Level with the blocked part of the wall ahead: get to the open side first.
+        if (cautious && g.wall && x[0] < g.wall.x - g.wall.halfWidth && intrusion(g.wall, g.wall.x, x[2], CLEARANCE) > 0) return t.hoverAt(x, Math.min(x[0], g.wall.x - 0.35), g.y);
         return t.hoverAt(x, g.x + ahead, g.y);
       });
-    }];
+    }; }
+    return [route(false), route(true)];
   }
 });
 

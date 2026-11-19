@@ -6,7 +6,8 @@
 // ---------------------------------------------------------------------------
 var TOL = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];   // the level's own completion tolerances
 
-// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions]}
+// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions],
+//         fallback(x, tools): what to do while no plan has been found (default: hover at the goal)}
 function makeMultirotorController(level)
 {
   var drive = null;
@@ -47,14 +48,15 @@ function makeMultirotorController(level)
     function hold(x) { return hoverAt(x, 0, 0); }
     function within(x, scale) { for (var i = 0; i < 6; i++) if (Math.abs(x[i]) > scale * TOL[i]) return false; return true; }
 
+    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h};
     drive = makeManeuver({
       mpc: mpc,
-      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds({mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h})},
+      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds(tools)},
       reached: function (x) { return within(x, 0.5); },
       strayed: function (x, xPlan) { for (var i = 0; i < 6; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
       canHold: function (x) { return Math.abs(x[4]) < 0.5 && Math.abs(x[0]) < 0.5 && Math.abs(x[2]) < 0.5; },
       hold: hold,
-      fallback: hold
+      fallback: level.fallback ? function (x) { return level.fallback(x, tools); } : hold
     });
   }
 

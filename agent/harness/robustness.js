@@ -3,7 +3,7 @@
 // often each solution still completes it, and how long it takes.
 //   node agent/harness/robustness.js [nameFilter] [runs=20] [which=new,old,sample]
 'use strict';
-const fs = require('fs'), path = require('path'), game = require('./game');
+const fs = require('fs'), path = require('path'), game = require('./game'), { OLD } = require('./old');
 const [filter = '', runs = '20', which = 'new'] = process.argv.slice(2);
 
 // Size of the disturbance for each state, by level family (uniform, plus or minus).
@@ -23,15 +23,6 @@ const NOISE = [
 // Small deterministic random number generator, so every solution sees the same starts.
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-// The earlier hand-written solutions in the repository root.
-const OLD = {
-  TutorialBlockWithFriction: 'tutorial_1', TutorialBlockWithoutFriction: 'tutorial_2', TutorialBlockOnSlope: 'tutorial_3',
-  CruiseControlIntro: 'cruise_control_1', CruiseControl2: 'cruise_control_2',
-  StabilizeSinglePendulum: 'inverted_pendulum_1', SwingUpSinglePendulum: 'inverted_pendulum_2',
-  StabilizeDoublePendulum: 'inverted_double_pendulum_1', SwingUpDoublePendulum: 'inverted_double_pendulum_2',
-  RocketLandingNormal: 'rocket_landing_1', RocketLandingUpsideDown: 'rocket_landing_2', RocketLandingMulti: 'rocket_landing_3',
-  BallOnPlatformBalance: 'ball_on_platform_1', BallOnPlatformBounce: 'ball_on_platform_2',
-};
 const baselines = JSON.parse(fs.readFileSync(path.join(__dirname, 'baselines.json'), 'utf8'));
 function source(level, kind) {
   if (kind === 'sample') return game.sampleSolution(level);
@@ -50,7 +41,7 @@ for (const level of game.levelNames()) {
     const times = [];
     for (let i = 0; i < +runs; i++) {
       const rand = rng(1000 + i);
-      const r = game.runLevel(level, code, { maxT: 3 * Math.max(baselines[level] && baselines[level].sample[1] || 20, 20), perturb(L) {
+      const r = game.runLevel(level, code, { maxT: kind === "old" ? 150 : 3 * Math.max(baselines[level] && baselines[level].sample[1] || 20, 20), perturb(L) {
         for (const m of L.models || [L.model]) for (const k in noise) m[k] += (2 * rand() - 1) * noise[k];
       } });
       if (r.status === 'SOLVED') times.push(r.time);

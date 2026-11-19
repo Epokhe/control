@@ -368,7 +368,8 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
-    for (o = 0; o < opts.outer; o++) {
+    // A few rounds extra for an attempt that has all but arrived.
+    for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
@@ -400,7 +401,8 @@ function planMinTime(mpc, x0, reached, opts)
   // uses the whole actuator range and leaves nothing for corrections.
   mpc.loadPlan(best);
   if (opts.margin > 1) mpc.setHorizon(Math.ceil(best.length * opts.margin));
-  if (!solve()) { mpc.loadPlan(best); solve(); }
+  // If the slack version does not work out, go back to exactly the shortest plan that did.
+  if (!solve()) { mpc.loadPlan(best); mpc.optimise(x0, 0); }
   return true;
 }
 

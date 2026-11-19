@@ -19,6 +19,12 @@ var controller = makeMultirotorController({
     for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX - 0.03 || Math.abs(X[k][2]) > BOX - 0.03) return false;
     return true;
   },
+  // Without a plan: hover upright where the vehicle is, whichever way up it
+  // counts as, and plan again from there.
+  fallback: function (x, t) {
+    var turns = 2 * Math.PI * Math.round(x[4] / (2 * Math.PI));
+    return t.hoverAt([x[0], x[1], x[2], x[3], x[4] - turns, x[5]], 0, 0);
+  },
   // Starting guess: the hover regulator, which already spins the vehicle
   // towards theta = 0. The optimiser adds the climb that makes room for it.
   seeds: function (t) {

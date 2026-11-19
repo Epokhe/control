@@ -363,7 +363,8 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
-    for (o = 0; o < opts.outer; o++) {
+    // A few rounds extra for an attempt that has all but arrived.
+    for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
@@ -395,7 +396,8 @@ function planMinTime(mpc, x0, reached, opts)
   // uses the whole actuator range and leaves nothing for corrections.
   mpc.loadPlan(best);
   if (opts.margin > 1) mpc.setHorizon(Math.ceil(best.length * opts.margin));
-  if (!solve()) { mpc.loadPlan(best); solve(); }
+  // If the slack version does not work out, go back to exactly the shortest plan that did.
+  if (!solve()) { mpc.loadPlan(best); mpc.optimise(x0, 0); }
   return true;
 }
 
@@ -550,15 +552,17 @@ function makeRocket(r, h)
   // Starting guesses: the conventional law, simulated until it touches down.
   // First in a hurry (descending straight away, wherever that ends up), which
   // is closer to a fast landing; if that leads nowhere, the patient version.
-  var STRETCH = [1, 1.3, 1.7];
+  var STRETCH = [1, 1.1, 1.3, 1.7];
   function seedWith(law)
   {
     return function (x0, attempt) {
       if (attempt >= STRETCH.length) return false;
       var x = x0.slice(), xn = [0, 0, 0, 0, 0, 0], steps = 0;
       while (steps < 380 && clearance(x) > 0) { mpc.step(x, law(x), xn); x = xn.slice(); steps++; }
-      mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
+      // The guess ends at touchdown; a longer plan starts from the same guess slowed down.
+      mpc.setHorizon(Math.max(10, steps));
       mpc.guess(x0, law);
+      if (attempt > 0) mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
     };
   }
   function hurried(x) { return cascade(x, true); }
@@ -574,7 +578,7 @@ function makeRocket(r, h)
         for (var k = 0; k <= N; k++) if (clearance(X[k]) <= 0) return k >= N - 2 && goodTouchdown(X[k], 0.7);
         return false;
       }},
-    reached: function (x) { var e = err(x); for (var i = 0; i < 6; i++) if (Math.abs(e[i]) > 0.5 * TOL[i]) return false; return true; },
+    reached: function (x) { var e = err(x); for (var i = 0; i < 6; i++) if (Math.abs(e[i]) > TOL[i]) return false; return true; },
     strayed: function (x, xPlan) { return Math.abs(x[0] - xPlan[0]) > 3 || Math.abs(x[2] - xPlan[2]) > 3 || Math.abs(x[4] - xPlan[4]) > 0.05; },
     canHold: function () { return true; },
     hold: patient,

@@ -12,6 +12,7 @@ var WALLS = [
 ];
 var CLEARANCE = 0.12;   // distance the planner keeps from a wall
 var WEIGHT = 40;
+var parked = null;
 
 // How deep a point is inside a wall grown by `margin` (0 when outside).
 function intrusion(wall, x, y, margin)
@@ -34,16 +35,21 @@ var controller = makeMultirotorController({
     }
     return true;
   },
+  // Without a plan: hover on the spot rather than fly at a wall, and plan again.
+  fallback: function (x, t) {
+    if (!parked) parked = {x: x[0], y: x[2]};
+    return t.hoverAt(x, parked.x, parked.y);
+  },
   // Starting guess: fly the hover regulator through the open side of each
   // wall still ahead, then to the goal. The optimiser rounds off the corners.
   seeds: function (t) {
-    var FACTORS = [1, 1.4, 2];
-    return [function (x0, attempt) {
+    var FACTORS = [1, 1.2, 1.4, 1.7, 2, 2.5];
+    function route(cautious) { return function (x0, attempt) {
       if (attempt >= FACTORS.length) return false;
       var gates = [], i, w, length = 0, px = x0[0], py = x0[2];
       for (i = 0; i < WALLS.length; i++) {
         w = WALLS[i];
-        if (w.x > x0[0]) gates.push({x: w.x, y: w.blocks === 'above' ? w.edge - 0.4 : w.edge + 0.4});
+        if (w.x > x0[0]) gates.push({x: w.x, y: w.blocks === 'above' ? w.edge - 0.4 : w.edge + 0.4, wall: w});
       }
       gates.push({x: 0, y: 0});
       for (i = 0; i < gates.length; i++) { length += Math.sqrt(Math.pow(gates[i].x - px, 2) + Math.pow(gates[i].y - py, 2)); px = gates[i].x; py = gates[i].y; }
@@ -53,9 +59,12 @@ var controller = makeMultirotorController({
         while (next < gates.length - 1 && x[0] > gates[next].x - 0.15) next++;
         // Aim a little past the gate so the guess keeps moving.
         var g = gates[next], ahead = next < gates.length - 1 ? 0.3 : 0;
+        // Level with the blocked part of the wall ahead: get to the open side first.
+        if (cautious && g.wall && x[0] < g.wall.x - g.wall.halfWidth && intrusion(g.wall, g.wall.x, x[2], CLEARANCE) > 0) return t.hoverAt(x, Math.min(x[0], g.wall.x - 0.35), g.y);
         return t.hoverAt(x, g.x + ahead, g.y);
       });
-    }];
+    }; }
+    return [route(false), route(true)];
   }
 });
 

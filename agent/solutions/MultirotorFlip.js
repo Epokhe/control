@@ -357,7 +357,8 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
-    for (o = 0; o < opts.outer; o++) {
+    // A few rounds extra for an attempt that has all but arrived.
+    for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
@@ -389,7 +390,8 @@ function planMinTime(mpc, x0, reached, opts)
   // uses the whole actuator range and leaves nothing for corrections.
   mpc.loadPlan(best);
   if (opts.margin > 1) mpc.setHorizon(Math.ceil(best.length * opts.margin));
-  if (!solve()) { mpc.loadPlan(best); solve(); }
+  // If the slack version does not work out, go back to exactly the shortest plan that did.
+  if (!solve()) { mpc.loadPlan(best); mpc.optimise(x0, 0); }
   return true;
 }
 
@@ -452,7 +454,8 @@ function dlqr(Ad, Bd, Q, R, start, tol)
 // ---------------------------------------------------------------------------
 var TOL = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];   // the level's own completion tolerances
 
-// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions]}
+// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions],
+//         fallback(x, tools): what to do while no plan has been found (default: hover at the goal)}
 function makeMultirotorController(level)
 {
   var drive = null;
@@ -493,14 +496,15 @@ function makeMultirotorController(level)
     function hold(x) { return hoverAt(x, 0, 0); }
     function within(x, scale) { for (var i = 0; i < 6; i++) if (Math.abs(x[i]) > scale * TOL[i]) return false; return true; }
 
+    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h};
     drive = makeManeuver({
       mpc: mpc,
-      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds({mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h})},
+      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds(tools)},
       reached: function (x) { return within(x, 0.5); },
       strayed: function (x, xPlan) { for (var i = 0; i < 6; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
       canHold: function (x) { return Math.abs(x[4]) < 0.5 && Math.abs(x[0]) < 0.5 && Math.abs(x[2]) < 0.5; },
       hold: hold,
-      fallback: hold
+      fallback: level.fallback ? function (x) { return level.fallback(x, tools); } : hold
     });
   }
 
@@ -525,6 +529,12 @@ var controller = makeMultirotorController({
   valid: function (X, N) {
     for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX - 0.03 || Math.abs(X[k][2]) > BOX - 0.03) return false;
     return true;
+  },
+  // Without a plan: hover upright where the vehicle is, whichever way up it
+  // counts as, and plan again from there.
+  fallback: function (x, t) {
+    var turns = 2 * Math.PI * Math.round(x[4] / (2 * Math.PI));
+    return t.hoverAt([x[0], x[1], x[2], x[3], x[4] - turns, x[5]], 0, 0);
   },
   // Starting guess: the hover regulator, which already spins the vehicle
   // towards theta = 0. The optimiser adds the climb that makes room for it.
