@@ -355,10 +355,12 @@ function makeMPC(spec)
 // opts.seeds is a list of functions (x0, attempt) that load a starting guess
 // into the planner and return false when they have nothing more to offer. The
 // first guess that leads to the goal is then shortened step by step, each
-// attempt warm-started from the last successful plan.
+// attempt warm-started from the last successful plan. opts.valid(states, N)
+// may veto a plan (e.g. one that touches an obstacle).
 function planMinTime(mpc, x0, reached, opts)
 {
-  function solve() { mpc.resetMultipliers(); mpc.optimise(x0, opts.iters, opts.outer, reached); return reached(mpc.final()); }
+  function done(xN) { return reached(xN) && (!opts.valid || opts.valid(mpc.states(), mpc.horizon())); }
+  function solve() { mpc.resetMultipliers(); mpc.optimise(x0, opts.iters, opts.outer, done); return done(mpc.final()); }
   var ok = false, i, attempt;
   for (i = 0; i < opts.seeds.length && !ok; i++)
     for (attempt = 0; attempt < 6 && !ok; attempt++) {

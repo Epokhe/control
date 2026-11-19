@@ -11,6 +11,7 @@ const LEVELS = {
   'CruiseControl.js': ['CruiseControlIntro', 'CruiseControl2'],
   'SinglePendulum.js': ['StabilizeSinglePendulum', 'SwingUpSinglePendulum'],
   'DoublePendulum.js': ['StabilizeDoublePendulum', 'SwingUpDoublePendulum'],
+  'RocketLanding.js': ['RocketLandingNormal', 'RocketLandingUpsideDown', 'RocketLandingMulti', 'RocketLandingHoverslam'],
 };
 fs.mkdirSync(OUT, { recursive: true });
 for (const f of fs.readdirSync(SRC)) {
