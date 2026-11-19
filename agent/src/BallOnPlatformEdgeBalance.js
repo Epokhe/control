@@ -24,7 +24,7 @@
 
 var CATCH_X = -0.5;        // where to catch the ball
 var ANGLE = -0.4;          // paddle angle to settle at when balancing (left end raised)
-var LAUNCH = [0.03, -0.6, -0.3, 0];      // end of the slide: just before the end, moving towards it, left end raised
+var LAUNCH = [0.03, -0.5, -0.35, 0];      // end of the slide: just before the end, moving towards it, left end raised
 var TOL = [0.01, 0.05, 0.03, 0.1];
 var W = {q: 0.3, dq: 0.05, th: 0.5, dth: 0.05, u: 0.004, limit: 30, press: 3};
 var HOLD = {top: 1000, dq: 1, th: 0.01, dth: 100, u: 0.01};   // weights of the regulator that balances the ball
@@ -103,11 +103,12 @@ function build()
   // Balancing regulators for a range of tilts. The ball can rest on top of
   // the end at any tilt; the regulator brings it to the top and to rest, and
   // steers the tilt itself back only slowly.
-  var gains = [], top = [1, 0, -M.radius, 0];
+  var gains = [], top = [1, 0, -M.radius, 0], warm = null;
   for (var a = -0.05; a > -0.7; a -= 0.05) {
     var lin = mpc.linearAt([M.radius * a, 0, a, 0], [0]), Q = numeric.diag([0, HOLD.dq, HOLD.th, HOLD.dth]);
     for (var i = 0; i < 4; i++) for (var j = 0; j < 4; j++) Q[i][j] += HOLD.top * top[i] * top[j];
-    gains.push(dlqr(lin.A, lin.B, Q, [[HOLD.u]])[0]);
+    warm = dlqr(lin.A, lin.B, Q, [[HOLD.u]], warm && warm.P, 1e-9);
+    gains.push(warm[0]);
   }
   function balance(x)
   {
@@ -167,6 +168,5 @@ function controlFunction(ball, piston, hinge, T)
     // Sliding: drift gently to mid-stroke, to have room for the above.
     pistonAcceleration = clamp((approach(piston.length - MID_LENGTH, 0.8, 0.3) - piston.speed) / 0.1, -1, 1);
   }
-  if (typeof DEBUG !== 'undefined') console.log(T.toFixed(2), drive.phase(), 'meas', x.map(function (v) { return v.toFixed(3); }).join(' '), 'gap', paddleContact(s).gap.toFixed(4), 'L', piston.length.toFixed(3), piston.speed.toFixed(3));
   return {pistonAcceleration: pistonAcceleration, hingeAcceleration: hingeAcceleration};
 }

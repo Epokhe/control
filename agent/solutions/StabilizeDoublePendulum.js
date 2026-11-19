@@ -436,10 +436,12 @@ function makeManeuver(cfg)
   }
 }
 
-// Discrete-time LQR gain by Riccati iteration: u = -K (x - xGoal).
-function dlqr(Ad, Bd, Q, R)
+// Discrete-time LQR gain by Riccati iteration: u = -K (x - xGoal). The
+// iteration may be started from the solution of a similar problem (K.P of an
+// earlier result) to save time.
+function dlqr(Ad, Bd, Q, R, start, tol)
 {
-  var P = numeric.clone(Q), K, it;
+  var P = numeric.clone(start || Q), K, it;
   var At = numeric.transpose(Ad), Bt = numeric.transpose(Bd);
   for (it = 0; it < 20000; it++) {
     var BtP = numeric.dot(Bt, P);
@@ -447,8 +449,9 @@ function dlqr(Ad, Bd, Q, R)
     var Pn = numeric.add(Q, numeric.dot(numeric.dot(At, P), numeric.sub(Ad, numeric.dot(Bd, K))));
     var diff = numeric.norminf(numeric.sub(Pn, P)) / (1 + numeric.norminf(P));
     P = Pn;
-    if (diff < 1e-12) break;
+    if (diff < (tol || 1e-12)) break;
   }
+  K.P = P;
   return K;
 }
 
