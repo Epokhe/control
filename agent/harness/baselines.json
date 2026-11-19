@@ -1,0 +1,191 @@
+{
+ "BallOnPlatformBalance": {
+  "sample": [
+   "SOLVED",
+   4.48
+  ],
+  "old": [
+   "SOLVED",
+   20
+  ]
+ },
+ "BallOnPlatformBounce": {
+  "sample": [
+   "SOLVED",
+   17.42
+  ],
+  "old": [
+   "SOLVED",
+   112.88
+  ]
+ },
+ "BallOnPlatformEdgeBalance": {
+  "sample": [
+   "SOLVED",
+   14.5
+  ],
+  "old": null
+ },
+ "CruiseControl2": {
+  "sample": [
+   "SOLVED",
+   15.3
+  ],
+  "old": [
+   "SOLVED",
+   15.3
+  ]
+ },
+ "CruiseControlIntro": {
+  "sample": [
+   "SOLVED",
+   15.54
+  ],
+  "old": [
+   "SOLVED",
+   15.54
+  ]
+ },
+ "MultirotorFlip": {
+  "sample": [
+   "SOLVED",
+   8.3
+  ],
+  "old": null
+ },
+ "MultirotorIntro": {
+  "sample": [
+   "SOLVED",
+   7.02
+  ],
+  "old": null
+ },
+ "MultirotorObstacles": {
+  "sample": [
+   "SOLVED",
+   8.92
+  ],
+  "old": null
+ },
+ "RocketLandingHoverslam": {
+  "sample": [
+   "SOLVED",
+   12.62
+  ],
+  "old": null
+ },
+ "RocketLandingMulti": {
+  "sample": [
+   "SOLVED",
+   25.72
+  ],
+  "old": [
+   "SOLVED",
+   31.56
+  ]
+ },
+ "RocketLandingNormal": {
+  "sample": [
+   "SOLVED",
+   18.58
+  ],
+  "old": [
+   "SOLVED",
+   17.8
+  ]
+ },
+ "RocketLandingUpsideDown": {
+  "sample": [
+   "SOLVED",
+   21.42
+  ],
+  "old": [
+   "SOLVED",
+   27.64
+  ]
+ },
+ "StabilizeDoublePendulum": {
+  "sample": [
+   "SOLVED",
+   8.14
+  ],
+  "old": [
+   "SOLVED",
+   33.1
+  ]
+ },
+ "StabilizeSinglePendulum": {
+  "sample": [
+   "SOLVED",
+   3.9
+  ],
+  "old": [
+   "SOLVED",
+   5.92
+  ]
+ },
+ "SwingUpDoublePendulum": {
+  "sample": [
+   "SOLVED",
+   13.74
+  ],
+  "old": [
+   "SOLVED",
+   86.38
+  ]
+ },
+ "SwingUpSinglePendulum": {
+  "sample": [
+   "SOLVED",
+   14.78
+  ],
+  "old": [
+   "SOLVED",
+   11.32
+  ]
+ },
+ "TutorialBlockOnSlope": {
+  "sample": [
+   "SOLVED",
+   17.42
+  ],
+  "old": [
+   "SOLVED",
+   15
+  ]
+ },
+ "TutorialBlockWithFriction": {
+  "sample": [
+   "SOLVED",
+   10.98
+  ],
+  "old": [
+   "SOLVED",
+   10.08
+  ]
+ },
+ "TutorialBlockWithoutFriction": {
+  "sample": [
+   "SOLVED",
+   7.5
+  ],
+  "old": [
+   "SOLVED",
+   10.02
+  ]
+ },
+ "VehicleRacing": {
+  "sample": [
+   "SOLVED",
+   39.9
+  ],
+  "old": null
+ },
+ "VehicleSteeringSimple": {
+  "sample": [
+   "SOLVED",
+   24.64
+  ],
+  "old": null
+ }
+}
