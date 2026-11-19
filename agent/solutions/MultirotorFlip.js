@@ -347,7 +347,9 @@ function makeMPC(spec)
 // into the planner and return false when they have nothing more to offer. The
 // first guess that leads to the goal is then shortened, each attempt
 // warm-started from the last successful plan. opts.valid(states, N)
-// may veto a plan (e.g. one that touches an obstacle).
+// may veto a plan (e.g. one that touches an obstacle); opts.stiffen(more)
+// is then called to raise the weight of whatever penalty should have
+// prevented that (more = 0 resets it for a new attempt).
 function planMinTime(mpc, x0, reached, opts)
 {
   function done(xN) { return reached(xN) && (!opts.valid || opts.valid(mpc.states(), mpc.horizon())); }
@@ -357,11 +359,14 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
+    if (opts.stiffen) opts.stiffen(0);
     // A few rounds extra for an attempt that has all but arrived.
     for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
+      // At the goal but vetoed: weigh the keep-out penalties more heavily and go on.
+      if (opts.stiffen && reached(mpc.final())) opts.stiffen(1);
       var now = mpc.miss();
       if (o >= 4 && now > 3 && now > 0.6 * miss) return false;
       miss = now;
@@ -454,7 +459,7 @@ function dlqr(Ad, Bd, Q, R, start, tol)
 // ---------------------------------------------------------------------------
 var TOL = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];   // the level's own completion tolerances
 
-// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions],
+// level: {nPenalty, penalty(x, r, offset), valid(states, N), stiffen(more), seeds(tools) -> [seed functions],
 //         fallback(x, tools): what to do while no plan has been found (default: hover at the goal)}
 function makeMultirotorController(level)
 {
@@ -494,12 +499,25 @@ function makeMultirotorController(level)
       return u;
     }
     function hold(x) { return hoverAt(x, 0, 0); }
+    // Fly towards a point from any state: a position loop asks for an
+    // acceleration, limited so that the tilt it takes stays moderate, and a
+    // fast attitude loop turns the vehicle to deliver it. Slower than the
+    // regulator above near the point, but it does not mind a bad start.
+    function flyTo(x, px, py, vx, vy)   // vx, vy: velocity of the point, if it moves
+    {
+      var ax = Math.max(-6, Math.min(6, 4 * (px - x[0]) + 4 * ((vx || 0) - x[1])));
+      var ay = Math.max(-0.5 * v.g, Math.min(6, 4 * (py - x[2]) + 4 * ((vy || 0) - x[3])));
+      var tilt = Math.atan2(ax, ay + v.g);
+      var thrust = v.mass * (ay + v.g) / Math.max(0.5, Math.cos(x[4]));
+      var turn = (64 * (tilt - x[4]) - 16 * x[5]) * v.I / v.Length / 2;
+      return [Math.max(0, Math.min(tMax, thrust / 2 + turn)), Math.max(0, Math.min(tMax, thrust / 2 - turn))];
+    }
     function within(x, scale) { for (var i = 0; i < 6; i++) if (Math.abs(x[i]) > scale * TOL[i]) return false; return true; }
 
-    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h};
+    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, flyTo: flyTo, hover: hover, v: v, h: h};
     drive = makeManeuver({
       mpc: mpc,
-      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds(tools)},
+      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, stiffen: level.stiffen, valid: level.valid, seeds: level.seeds(tools)},
       reached: function (x) { return within(x, 0.5); },
       strayed: function (x, xPlan) { for (var i = 0; i < 6; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
       canHold: function (x) { return Math.abs(x[4]) < 0.5 && Math.abs(x[0]) < 0.5 && Math.abs(x[2]) < 0.5; },
@@ -516,8 +534,12 @@ function makeMultirotorController(level)
   };
 }
 
-var BOX = 1 - 0.8 * 0.1;   // the level fails outside |x|, |y| < boxRadius - 0.8 * Length
-var CLEARANCE = 0.15;
+// The game fails the level when the vehicle's centre is 0.92 from the middle,
+// by which point the rotors would be inside the wall (the box's inner faces
+// are at 1). Here the whole vehicle has to stay inside.
+var BODY = 0.2;            // half the vehicle's span, with a little to spare
+var BOX = 1 - BODY;        // limit for the centre
+var CLEARANCE = 0.1;       // distance from that limit the planner aims to keep
 var WEIGHT = 40;
 
 var controller = makeMultirotorController({
@@ -527,7 +549,7 @@ var controller = makeMultirotorController({
     r[offset + 1] = WEIGHT * Math.max(0, Math.abs(x[2]) - (BOX - CLEARANCE));
   },
   valid: function (X, N) {
-    for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX - 0.03 || Math.abs(X[k][2]) > BOX - 0.03) return false;
+    for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX || Math.abs(X[k][2]) > BOX) return false;
     return true;
   },
   // Without a plan: hover upright where the vehicle is, whichever way up it

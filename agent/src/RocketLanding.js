@@ -156,6 +156,7 @@ function makeRocket(r, h)
 // controller keeps one planner per rocket and recognises each rocket by where
 // its model said it would be next.
 var rockets = [];
+var SPOTS = [0, 20, -20];   // where on the pad (x) the first, second, third rocket lands
 
 function controlFunction(rocket)
 {
@@ -166,9 +167,12 @@ function controlFunction(rocket)
     for (j = 0; j < 6; j++) d = Math.max(d, Math.abs(e[j] - x[j]));
     if (d < 1e-3 && rockets[i].T < rocket.T) mine = rockets[i];
   }
-  if (!mine) { mine = makeRocket(rocket, 0.02); rockets.push(mine); }
+  // Each rocket gets its own spot on the pad, so that they do not land on top of each other.
+  if (!mine) { mine = makeRocket(rocket, 0.02); mine.spot = SPOTS[rockets.length % SPOTS.length]; rockets.push(mine); }
+  x[0] -= mine.spot;
   var u = mine.control(x);
   mine.expect = mine.predict(x, u);
+  mine.expect[0] += mine.spot;
   mine.T = rocket.T;
   return {throttle: u[0], gimbalAngle: u[1]};
 }

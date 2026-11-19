@@ -353,7 +353,9 @@ function makeMPC(spec)
 // into the planner and return false when they have nothing more to offer. The
 // first guess that leads to the goal is then shortened, each attempt
 // warm-started from the last successful plan. opts.valid(states, N)
-// may veto a plan (e.g. one that touches an obstacle).
+// may veto a plan (e.g. one that touches an obstacle); opts.stiffen(more)
+// is then called to raise the weight of whatever penalty should have
+// prevented that (more = 0 resets it for a new attempt).
 function planMinTime(mpc, x0, reached, opts)
 {
   function done(xN) { return reached(xN) && (!opts.valid || opts.valid(mpc.states(), mpc.horizon())); }
@@ -363,11 +365,14 @@ function planMinTime(mpc, x0, reached, opts)
   {
     var miss = Infinity, o;
     mpc.resetMultipliers();
+    if (opts.stiffen) opts.stiffen(0);
     // A few rounds extra for an attempt that has all but arrived.
     for (o = 0; o < opts.outer || (o < opts.outer + 4 && miss < 2); o++) {
       if (o > 0) mpc.updateMultipliers();
       mpc.optimise(x0, opts.iters);
       if (done(mpc.final())) return true;
+      // At the goal but vetoed: weigh the keep-out penalties more heavily and go on.
+      if (opts.stiffen && reached(mpc.final())) opts.stiffen(1);
       var now = mpc.miss();
       if (o >= 4 && now > 3 && now > 0.6 * miss) return false;
       miss = now;
@@ -599,6 +604,7 @@ function makeRocket(r, h)
 // controller keeps one planner per rocket and recognises each rocket by where
 // its model said it would be next.
 var rockets = [];
+var SPOTS = [0, 20, -20];   // where on the pad (x) the first, second, third rocket lands
 
 function controlFunction(rocket)
 {
@@ -609,9 +615,12 @@ function controlFunction(rocket)
     for (j = 0; j < 6; j++) d = Math.max(d, Math.abs(e[j] - x[j]));
     if (d < 1e-3 && rockets[i].T < rocket.T) mine = rockets[i];
   }
-  if (!mine) { mine = makeRocket(rocket, 0.02); rockets.push(mine); }
+  // Each rocket gets its own spot on the pad, so that they do not land on top of each other.
+  if (!mine) { mine = makeRocket(rocket, 0.02); mine.spot = SPOTS[rockets.length % SPOTS.length]; rockets.push(mine); }
+  x[0] -= mine.spot;
   var u = mine.control(x);
   mine.expect = mine.predict(x, u);
+  mine.expect[0] += mine.spot;
   mine.T = rocket.T;
   return {throttle: u[0], gimbalAngle: u[1]};
 }

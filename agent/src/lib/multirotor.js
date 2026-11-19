@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 var TOL = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];   // the level's own completion tolerances
 
-// level: {nPenalty, penalty(x, r, offset), valid(states, N), seeds(tools) -> [seed functions],
+// level: {nPenalty, penalty(x, r, offset), valid(states, N), stiffen(more), seeds(tools) -> [seed functions],
 //         fallback(x, tools): what to do while no plan has been found (default: hover at the goal)}
 function makeMultirotorController(level)
 {
@@ -46,12 +46,25 @@ function makeMultirotorController(level)
       return u;
     }
     function hold(x) { return hoverAt(x, 0, 0); }
+    // Fly towards a point from any state: a position loop asks for an
+    // acceleration, limited so that the tilt it takes stays moderate, and a
+    // fast attitude loop turns the vehicle to deliver it. Slower than the
+    // regulator above near the point, but it does not mind a bad start.
+    function flyTo(x, px, py, vx, vy)   // vx, vy: velocity of the point, if it moves
+    {
+      var ax = Math.max(-6, Math.min(6, 4 * (px - x[0]) + 4 * ((vx || 0) - x[1])));
+      var ay = Math.max(-0.5 * v.g, Math.min(6, 4 * (py - x[2]) + 4 * ((vy || 0) - x[3])));
+      var tilt = Math.atan2(ax, ay + v.g);
+      var thrust = v.mass * (ay + v.g) / Math.max(0.5, Math.cos(x[4]));
+      var turn = (64 * (tilt - x[4]) - 16 * x[5]) * v.I / v.Length / 2;
+      return [Math.max(0, Math.min(tMax, thrust / 2 + turn)), Math.max(0, Math.min(tMax, thrust / 2 - turn))];
+    }
     function within(x, scale) { for (var i = 0; i < 6; i++) if (Math.abs(x[i]) > scale * TOL[i]) return false; return true; }
 
-    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, hover: hover, v: v, h: h};
+    var tools = {mpc: mpc, hold: hold, hoverAt: hoverAt, flyTo: flyTo, hover: hover, v: v, h: h};
     drive = makeManeuver({
       mpc: mpc,
-      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, valid: level.valid, seeds: level.seeds(tools)},
+      plan: {iters: 40, outer: 8, margin: 1.05, shrink: level.shrink, stiffen: level.stiffen, valid: level.valid, seeds: level.seeds(tools)},
       reached: function (x) { return within(x, 0.5); },
       strayed: function (x, xPlan) { for (var i = 0; i < 6; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
       canHold: function (x) { return Math.abs(x[4]) < 0.5 && Math.abs(x[0]) < 0.5 && Math.abs(x[2]) < 0.5; },

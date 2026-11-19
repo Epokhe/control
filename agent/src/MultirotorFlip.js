@@ -5,8 +5,12 @@
 
 //#include lib/multirotor.js
 
-var BOX = 1 - 0.8 * 0.1;   // the level fails outside |x|, |y| < boxRadius - 0.8 * Length
-var CLEARANCE = 0.15;
+// The game fails the level when the vehicle's centre is 0.92 from the middle,
+// by which point the rotors would be inside the wall (the box's inner faces
+// are at 1). Here the whole vehicle has to stay inside.
+var BODY = 0.2;            // half the vehicle's span, with a little to spare
+var BOX = 1 - BODY;        // limit for the centre
+var CLEARANCE = 0.1;       // distance from that limit the planner aims to keep
 var WEIGHT = 40;
 
 var controller = makeMultirotorController({
@@ -16,7 +20,7 @@ var controller = makeMultirotorController({
     r[offset + 1] = WEIGHT * Math.max(0, Math.abs(x[2]) - (BOX - CLEARANCE));
   },
   valid: function (X, N) {
-    for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX - 0.03 || Math.abs(X[k][2]) > BOX - 0.03) return false;
+    for (var k = 0; k <= N; k++) if (Math.abs(X[k][0]) > BOX || Math.abs(X[k][2]) > BOX) return false;
     return true;
   },
   // Without a plan: hover upright where the vehicle is, whichever way up it

@@ -37,8 +37,8 @@ Watch any of them side by side in [`videos/`](videos) (`all-levels.mp4` plays th
 | Ball on platform: bounce | 112.88 | **6.18** | 17.42 | 18x faster |
 | Ball on platform: edge balance | not solved | **6.24** | 14.50 | |
 | Multirotor intro | not solved | **1.26** | 7.02 | |
-| Multirotor obstacles | not solved | **1.88** | 8.92 | |
-| Multirotor flip | not solved | **1.78** | 8.30 | |
+| Multirotor obstacles | not solved | **3.72** | 8.92 | whole vehicle clear of the walls, see notes |
+| Multirotor flip | not solved | **1.86** | 8.30 | |
 | Vehicle steering | not solved | 24.64 | 24.64 | fixed speed, so the lap takes what it takes |
 | Vehicle racing | not solved | **35.82** | 39.90 | |
 
@@ -59,9 +59,9 @@ and tilted by up to 0.2 rad, or a ball up to 15 cm to the side.
 | BallOnPlatformEdgeBalance | 12/12 | 6.48 | 6.94 |
 | CruiseControl2 | 12/12 | 15.52 | 26.66 |
 | CruiseControlIntro | 12/12 | 15.82 | 17.04 |
-| MultirotorFlip | 12/12 | 1.86 | 2.38 |
+| MultirotorFlip | 12/12 | 1.86 | 2.50 |
 | MultirotorIntro | 12/12 | 1.26 | 1.42 |
-| MultirotorObstacles | 12/12 | 1.90 | 2.56 |
+| MultirotorObstacles | 12/12 | 3.64 | 5.94 |
 | RocketLandingHoverslam | 12/12 | 9.72 | 10.22 |
 | RocketLandingMulti | 12/12 | 12.64 | 14.42 |
 | RocketLandingNormal | 12/12 | 10.12 | 16.28 |
@@ -105,9 +105,11 @@ motion and where the first guess comes from:
   guess. The plan may not touch the ground before its end, and must end in a clean landing. The same
   file lands all four levels; it reads the minimum throttle from the model, which is all that makes
   the hoverslam level different.
-- *Multirotor*: a hover regulator flown through the open side of each wall gives the guess; the walls
-  are penalties in the plan and a plan that touches one is rejected. The flip is found by the
-  optimiser on its own from a guess that just unwinds the angle.
+- *Multirotor*: the flip is found by the optimiser on its own from a guess that just unwinds the
+  angle. For the obstacles, the guess follows a point that moves along a route past the open end of
+  each wall, at several speeds, fastest first; the walls are penalties in the plan that push it
+  towards a wall's open end, and a plan that comes closer to a wall than the vehicle's half span
+  plus a tracking allowance is rejected.
 
 **Ball on platform.** The piston is hardly quicker than gravity and every bounce keeps 90 % of the
 speed, so a ball cannot simply be caught. Everything is built from *aimed bounces* (`src/lib/aim.js`):
@@ -139,6 +141,17 @@ allows for the current steering angle.
   settles for a slower landing (worst case in the table above), and falls back to the conventional
   landing law if it finds nothing.
 - The speeds are near what the actuators allow but are not proven optimal.
+- The game's collision tests for the multirotor are lenient: on the obstacles level it only fails
+  when the vehicle's centre is 0.4 inside a wall end, and on the flip level when the centre is 0.08
+  from the box. A first version of the obstacles controller planned against that rule, finished in
+  1.88 s, and visibly flew through the ends of both walls (Barış spotted it in the video). Both
+  controllers now keep the whole vehicle clear of the walls as drawn, and the harness measures the
+  real gap: at least 0.25 from centre to wall on every run that does not already start closer
+  (the vehicle's half span is 0.18). That costs the obstacles level 1.8 s.
+- The obstacles planner is sensitive to rounding: the same code finishes in 3.72 s in Node and in
+  3.02 s in Chromium (the video), because the two find slightly different plans.
+- The game lets rockets pass through each other, so on the three-rocket level they could all land
+  on the same spot. Each rocket here aims for its own spot on the pad (0, +20, -20 m).
 
 ## Running it
 
