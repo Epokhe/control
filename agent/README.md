@@ -76,9 +76,8 @@ and tilted by up to 0.2 rad, or a ball up to 15 cm to the side.
 | VehicleRacing | 12/12 | 35.82 | 36.02 |
 | VehicleSteeringSimple | 12/12 | 24.64 | 24.66 |
 
-That is 252 of 252 runs. The two slow outliers are worth knowing about: a double pendulum that starts
-far enough off upright has to be caught with a longer manoeuvre (20.9 s worst case on the stabilise
-level), and cruise control simply takes longer when the car starts 10 m/s off the target speed.
+That is 252 of 252 runs. The two slow outliers are worth knowing about: one disturbed start of the stabilise-double-pendulum level takes 20.9 s where the others take about 4
+(the planner settles for a much longer manoeuvre there), and cruise control simply takes longer when the car starts 10 m/s off the target speed.
 For comparison, with the same starts the game's sample solutions land 6 of 12 on the three-rocket
 level, 8 of 12 on the hoverslam and 10 of 12 on the multirotor flip.
 
