@@ -410,7 +410,9 @@ function planMinTime(mpc, x0, reached, opts)
 function makeManeuver(cfg)
 {
   var mpc = cfg.mpc, phase = 'plan', sub = cfg.sub || 1, count = 0, last = null, wait = 0, track = null;
-  return function (x)
+  drive.phase = function () { return phase; };
+  return drive;
+  function drive(x)
   {
     if (phase === 'hold') { if (cfg.canHold(x)) return cfg.hold(x); phase = 'plan'; }
     if (phase === 'track') {
@@ -426,7 +428,7 @@ function makeManeuver(cfg)
     track = mpc.tracker(); phase = 'track'; count = 1;
     last = track.input(0, x);
     return last;
-  };
+  }
 }
 
 // Discrete-time LQR gain by Riccati iteration: u = -K (x - xGoal).

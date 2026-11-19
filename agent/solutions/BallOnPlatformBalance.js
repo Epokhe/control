@@ -215,6 +215,7 @@ function makeAimer()
 //
 // makeCatcher(P) returns step(ball, piston, hinge) -> {pistonAcceleration,
 // hingeAcceleration, resting}. P.x is where the ball should come to rest.
+// step.settle is the piston rule for a ball that is on the paddle.
 // ---------------------------------------------------------------------------
 var CATCH_DEFAULTS = {
   x: 0,
@@ -306,6 +307,19 @@ function makeCatcher(options)
     return Math.abs(s.vx) < P.slow ? {name: 'drop', target: dropTarget(s)} : {name: 'pop', target: popTarget(s)};
   }
 
+  // Piston rule for a ball lying on the paddle or bouncing a little.
+  // Lying: move at the speed wanted (zero to stop), without throwing the ball
+  // off. Bouncing: move with the ball, closing in slowly, so that it lands softly.
+  function settle(ball, piston, c, wanted)
+  {
+    var M = PADDLE, gap = Math.max(0, c.gap), lowest = -M.pistonAccel, want = wanted;
+    if (gap < P.restGap && Math.abs(c.closing) < P.restSpeed) lowest = -P.carry;
+    else want = ball.vy - (c.pvy - piston.speed) - M.g * M.dt + P.touch + P.chase * Math.sqrt(2 * (M.g + M.pistonAccel) * gap);
+    var up = Math.sqrt(2 * P.brake * Math.max(0, M.lengthMax - 0.01 - piston.length));
+    var down = -Math.sqrt(2 * P.brake * Math.max(0, piston.length - M.lengthMin - 0.01));
+    return clamp((clamp(want, down, up) - piston.speed) / M.dt, lowest, M.pistonAccel);
+  }
+
   function step(ball, piston, hinge)
   {
     var M = PADDLE, s = paddleState(ball, piston, hinge), c = paddleContact(s);
@@ -322,14 +336,7 @@ function makeCatcher(options)
       }
     }
 
-    // Piston. Resting: come to a stop without throwing the ball off. In a small
-    // bounce: move with the ball, closing in slowly, so that it lands softly.
-    var want, lowest = -M.pistonAccel;
-    if (resting) { want = 0; lowest = -P.carry; }
-    else want = ball.vy - M.g * M.dt + P.touch + P.chase * Math.sqrt(2 * (M.g + M.pistonAccel) * gap);
-    var up = Math.sqrt(2 * P.brake * Math.max(0, M.lengthMax - 0.01 - piston.length));
-    var down = -Math.sqrt(2 * P.brake * Math.max(0, piston.length - M.lengthMin - 0.01));
-    var pistonAcceleration = clamp((clamp(want, down, up) - piston.speed) / M.dt, lowest, M.pistonAccel);
+    var pistonAcceleration = settle(ball, piston, c, 0);
 
     // Hinge. The ball only changes its sideways speed when it presses on a
     // tilted paddle: in one go when it bounces, steadily when it rests.
@@ -342,6 +349,7 @@ function makeCatcher(options)
     return {pistonAcceleration: pistonAcceleration, hingeAcceleration: hingeAcceleration, resting: resting};
   }
 
+  step.settle = settle;
   return step;
 }
 
