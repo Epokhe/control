@@ -118,7 +118,7 @@ function build(p, h)
 
   drive = makeManeuver({
     mpc: up, sub: SUB,
-    plan: {iters: 40, outer: 8, margin: 1.0, shrink: [], seeds: [seedHold, seedReverse]},
+    plan: {iters: 40, outer: 8, margin: 1.0, shrink: 0, seeds: [seedHold, seedReverse]},
     reached: function (x) { return within(x, 0.5); },
     strayed: function (x, xPlan) { for (var i = 0; i < x.length; i++) if (Math.abs(x[i] - xPlan[i]) > 30 * TOL[i]) return true; return false; },
     canHold: function (x) { var e = err(x); return Math.abs(e[2]) < 0.2 && Math.abs(e[4]) < 0.2 && Math.abs(e[3]) < 1 && Math.abs(e[5]) < 1 && Math.abs(e[0]) < 1; },

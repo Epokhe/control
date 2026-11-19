@@ -66,7 +66,7 @@ function makeRocket(r, h)
   var canHover = thrMin * twr < 0.95;
   var Kside = sidewaysGain();
   var spinUp = g * twr * 6 / len * Math.sin(GIMBAL_MAX);   // angular acceleration at full throttle and gimbal
-  function cascade(x)
+  function cascade(x, hurry)
   {
     var th = wrap(x[4]), height = Math.max(0, x[2] - yTouch), upright = Math.cos(th);
     // Sideways and attitude: near upright, an LQR law on (x, dx, theta, dtheta)
@@ -88,7 +88,7 @@ function makeRocket(r, h)
     var vBrake = -Math.min(Math.sqrt(2 * aBrake * height), 0.8 * height) + TOUCH.dy;   // eases off for the last metres
     var overPad = Math.abs(x[0]) < 10 && Math.abs(x[1]) < 1.5 && Math.abs(th) < 0.03 && Math.abs(x[5]) < 0.03;
     var vWant = vBrake, aWant = (x[3] < TOUCH.dy && height > 2 * aBrake / 0.64) ? aBrake : 0;
-    if (canHover && !overPad) { var vSafe = clamp(0.4 * (SAFE_HEIGHT - height), -15, 15); if (vSafe > vBrake) { vWant = vSafe; aWant = 0; } }
+    if (canHover && !overPad && !hurry) { var vSafe = clamp(0.4 * (SAFE_HEIGHT - height), -15, 15); if (vSafe > vBrake) { vWant = vSafe; aWant = 0; } }
     var throttle = (g + aWant + 3 * (vWant - x[3])) / (g * twr * Math.max(upright, 0.3));
     if (tumbling) throttle = upright > 0 ? 1 : 0.6;                    // thrust is what turns the rocket
     return [clamp(throttle, thrMin, 1), gimbal];
@@ -106,21 +106,27 @@ function makeRocket(r, h)
     terminalResidual: function (x, res) { var e = err(x); for (var i = 0; i < 6; i++) res[i] = e[i] / TOL[i]; }
   });
 
-  // Starting guess: the conventional law, simulated until it touches down.
-  var STRETCH = [1, 1.3, 1.7, 0.8];
-  function seed(x0, attempt)
+  // Starting guesses: the conventional law, simulated until it touches down.
+  // First in a hurry (descending straight away, wherever that ends up), which
+  // is closer to a fast landing; if that leads nowhere, the patient version.
+  var STRETCH = [1, 1.3, 1.7];
+  function seedWith(law)
   {
-    if (attempt >= STRETCH.length) return false;
-    var x = x0.slice(), xn = [0, 0, 0, 0, 0, 0], steps = 0;
-    while (steps < 380 && clearance(x) > 0) { mpc.step(x, cascade(x), xn); x = xn.slice(); steps++; }
-    mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
-    mpc.guess(x0, cascade);
+    return function (x0, attempt) {
+      if (attempt >= STRETCH.length) return false;
+      var x = x0.slice(), xn = [0, 0, 0, 0, 0, 0], steps = 0;
+      while (steps < 380 && clearance(x) > 0) { mpc.step(x, law(x), xn); x = xn.slice(); steps++; }
+      mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
+      mpc.guess(x0, law);
+    };
   }
+  function hurried(x) { return cascade(x, true); }
+  function patient(x) { return cascade(x, false); }
 
   var drive = makeManeuver({
     mpc: mpc, sub: SUB,
-    plan: {iters: 40, outer: 8, margin: 1.03, seeds: [seed],
-      shrink: [0.6, 0.8, 0.9, 0.95],
+    plan: {iters: 40, outer: 8, margin: 1.03, seeds: [seedWith(hurried), seedWith(patient)],
+      shrink: 0.8,
       // Accept a plan only if it stays off the ground until its very end and
       // the contact there is a clean landing.
       valid: function (X, N) {
@@ -130,8 +136,8 @@ function makeRocket(r, h)
     reached: function (x) { var e = err(x); for (var i = 0; i < 6; i++) if (Math.abs(e[i]) > 0.5 * TOL[i]) return false; return true; },
     strayed: function (x, xPlan) { return Math.abs(x[0] - xPlan[0]) > 3 || Math.abs(x[2] - xPlan[2]) > 3 || Math.abs(x[4] - xPlan[4]) > 0.05; },
     canHold: function () { return true; },
-    hold: cascade,
-    fallback: cascade
+    hold: patient,
+    fallback: patient
   });
 
   return {

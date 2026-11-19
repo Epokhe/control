@@ -297,6 +297,8 @@ function makeMPC(spec)
   return {
     plan: function () { return U; }, states: function () { return X; }, horizon: function () { return N; },
     final: function () { return X[N]; }, cost: function () { return cost; },
+    // Largest terminal constraint violation of the current plan (1 = one tolerance).
+    miss: function () { resT(X[N], rbuf); var w = 0; for (var q = 0; q < nrT; q++) w = Math.max(w, Math.abs(rbuf[q])); return w; },
     linearAt: linearAt, step: step, optimise: optimise, shift: shift, updateMultipliers: updateMultipliers, resetMultipliers: resetMultipliers, setHorizon: setHorizon,
     // Freeze the current plan as a trajectory with feedback gains:
     // input(k, x) = U[k] + K[k] (x - X[k]), clipped to the limits.
@@ -349,13 +351,28 @@ function makeMPC(spec)
 // the optimiser still reaches the goal, as judged by reached(finalState).
 // opts.seeds is a list of functions (x0, attempt) that load a starting guess
 // into the planner and return false when they have nothing more to offer. The
-// first guess that leads to the goal is then shortened step by step, each
-// attempt warm-started from the last successful plan. opts.valid(states, N)
+// first guess that leads to the goal is then shortened, each attempt
+// warm-started from the last successful plan. opts.valid(states, N)
 // may veto a plan (e.g. one that touches an obstacle).
 function planMinTime(mpc, x0, reached, opts)
 {
   function done(xN) { return reached(xN) && (!opts.valid || opts.valid(mpc.states(), mpc.horizon())); }
-  function solve() { mpc.resetMultipliers(); mpc.optimise(x0, opts.iters, opts.outer, done); return done(mpc.final()); }
+  // One attempt at the current horizon. Gives up early when the distance to
+  // the goal has stopped shrinking (the usual sign of "not enough time").
+  function solve()
+  {
+    var miss = Infinity, o;
+    mpc.resetMultipliers();
+    for (o = 0; o < opts.outer; o++) {
+      if (o > 0) mpc.updateMultipliers();
+      mpc.optimise(x0, opts.iters);
+      if (done(mpc.final())) return true;
+      var now = mpc.miss();
+      if (o >= 4 && now > 3 && now > 0.6 * miss) return false;
+      miss = now;
+    }
+    return false;
+  }
   var ok = false, i, attempt;
   for (i = 0; i < opts.seeds.length && !ok; i++)
     for (attempt = 0; attempt < 6 && !ok; attempt++) {
@@ -364,12 +381,15 @@ function planMinTime(mpc, x0, reached, opts)
       if (seeded !== 'skip') ok = solve();    // 'skip': this attempt produced no guess, try the next
     }
   if (!ok) return false;
-  var best = mpc.savePlan(), factors = opts.shrink || [0.8, 0.9, 0.95];
-  for (i = 0; i < factors.length;) {
-    var tryN = Math.floor(best.length * factors[i]);
-    if (tryN >= best.length || tryN < 2) { i++; continue; }
+  // Shorten: in moderate steps until an attempt fails (a plan squeezed too
+  // much in one go is a poor starting guess), then bisect between that
+  // failure and the shortest success.
+  var best = mpc.savePlan(), tooShort = 1, factor = opts.shrink === undefined ? 0.8 : opts.shrink;
+  while (factor && best.length > tooShort * (opts.resolution || 1.08)) {
+    var tryN = tooShort > 1 ? Math.round((best.length + tooShort) / 2) : Math.floor(best.length * factor);
+    if (tryN >= best.length || tryN <= tooShort) break;
     mpc.loadPlan(best); mpc.setHorizon(tryN);
-    if (solve()) best = mpc.savePlan(); else i++;
+    if (solve()) best = mpc.savePlan(); else tooShort = tryN;
   }
   // Keep a little slack over the shortest feasible time: a time-optimal plan
   // uses the whole actuator range and leaves nothing for corrections.
@@ -482,7 +502,7 @@ function makeRocket(r, h)
   var canHover = thrMin * twr < 0.95;
   var Kside = sidewaysGain();
   var spinUp = g * twr * 6 / len * Math.sin(GIMBAL_MAX);   // angular acceleration at full throttle and gimbal
-  function cascade(x)
+  function cascade(x, hurry)
   {
     var th = wrap(x[4]), height = Math.max(0, x[2] - yTouch), upright = Math.cos(th);
     // Sideways and attitude: near upright, an LQR law on (x, dx, theta, dtheta)
@@ -504,7 +524,7 @@ function makeRocket(r, h)
     var vBrake = -Math.min(Math.sqrt(2 * aBrake * height), 0.8 * height) + TOUCH.dy;   // eases off for the last metres
     var overPad = Math.abs(x[0]) < 10 && Math.abs(x[1]) < 1.5 && Math.abs(th) < 0.03 && Math.abs(x[5]) < 0.03;
     var vWant = vBrake, aWant = (x[3] < TOUCH.dy && height > 2 * aBrake / 0.64) ? aBrake : 0;
-    if (canHover && !overPad) { var vSafe = clamp(0.4 * (SAFE_HEIGHT - height), -15, 15); if (vSafe > vBrake) { vWant = vSafe; aWant = 0; } }
+    if (canHover && !overPad && !hurry) { var vSafe = clamp(0.4 * (SAFE_HEIGHT - height), -15, 15); if (vSafe > vBrake) { vWant = vSafe; aWant = 0; } }
     var throttle = (g + aWant + 3 * (vWant - x[3])) / (g * twr * Math.max(upright, 0.3));
     if (tumbling) throttle = upright > 0 ? 1 : 0.6;                    // thrust is what turns the rocket
     return [clamp(throttle, thrMin, 1), gimbal];
@@ -522,21 +542,27 @@ function makeRocket(r, h)
     terminalResidual: function (x, res) { var e = err(x); for (var i = 0; i < 6; i++) res[i] = e[i] / TOL[i]; }
   });
 
-  // Starting guess: the conventional law, simulated until it touches down.
-  var STRETCH = [1, 1.3, 1.7, 0.8];
-  function seed(x0, attempt)
+  // Starting guesses: the conventional law, simulated until it touches down.
+  // First in a hurry (descending straight away, wherever that ends up), which
+  // is closer to a fast landing; if that leads nowhere, the patient version.
+  var STRETCH = [1, 1.3, 1.7];
+  function seedWith(law)
   {
-    if (attempt >= STRETCH.length) return false;
-    var x = x0.slice(), xn = [0, 0, 0, 0, 0, 0], steps = 0;
-    while (steps < 380 && clearance(x) > 0) { mpc.step(x, cascade(x), xn); x = xn.slice(); steps++; }
-    mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
-    mpc.guess(x0, cascade);
+    return function (x0, attempt) {
+      if (attempt >= STRETCH.length) return false;
+      var x = x0.slice(), xn = [0, 0, 0, 0, 0, 0], steps = 0;
+      while (steps < 380 && clearance(x) > 0) { mpc.step(x, law(x), xn); x = xn.slice(); steps++; }
+      mpc.setHorizon(Math.max(10, Math.round(STRETCH[attempt] * steps)));
+      mpc.guess(x0, law);
+    };
   }
+  function hurried(x) { return cascade(x, true); }
+  function patient(x) { return cascade(x, false); }
 
   var drive = makeManeuver({
     mpc: mpc, sub: SUB,
-    plan: {iters: 40, outer: 8, margin: 1.03, seeds: [seed],
-      shrink: [0.6, 0.8, 0.9, 0.95],
+    plan: {iters: 40, outer: 8, margin: 1.03, seeds: [seedWith(hurried), seedWith(patient)],
+      shrink: 0.8,
       // Accept a plan only if it stays off the ground until its very end and
       // the contact there is a clean landing.
       valid: function (X, N) {
@@ -546,8 +572,8 @@ function makeRocket(r, h)
     reached: function (x) { var e = err(x); for (var i = 0; i < 6; i++) if (Math.abs(e[i]) > 0.5 * TOL[i]) return false; return true; },
     strayed: function (x, xPlan) { return Math.abs(x[0] - xPlan[0]) > 3 || Math.abs(x[2] - xPlan[2]) > 3 || Math.abs(x[4] - xPlan[4]) > 0.05; },
     canHold: function () { return true; },
-    hold: cascade,
-    fallback: cascade
+    hold: patient,
+    fallback: patient
   });
 
   return {
